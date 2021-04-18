@@ -1,0 +1,130 @@
+firstPierceTime = 0 --this is an extra delay added to the first pierce as needed by some machines
+
+
+post.ForceExtension("nc")
+
+function OnAbout(event)
+   ctrl = event:GetTextCtrl()
+   ctrl:AppendText("GRBL plasma post processor\n")
+   ctrl:AppendText("\n")
+   ctrl:AppendText("Generic plasma post for machines with or without THC\n")
+   ctrl:AppendText("\n")
+   ctrl:AppendText("Modal G-codes and coordinates\n")
+   ctrl:AppendText("No comments\n")
+   ctrl:AppendText("M03/M05 turn the torch on/off\n")
+   ctrl:AppendText("Incremental IJ\n")
+end
+
+
+
+
+function OnInit()
+
+   
+   post.SetOptions(post.ARC_SEGMENTS)
+   post.SetCommentChars ("()", "[]")  --make sure ( and ) characters do not appear in system text
+   post.Text (" G54\n")
+   post.Text (" G90\n")
+   if(scale == metric) then
+      post.Text (" G21\n") --metric mode
+   else
+      post.Text (" G20\n") --inch mode
+   end
+   bigArcs = 1 --stitch arc segments together
+   minArcSize = 0.05 --arcs smaller than this are converted to moves
+   firstPierce = firstPierceTime
+end
+
+function OnFinish()
+   post.Text (" M05 M30\n")
+   post.Eol()
+end
+
+function OnRapid()
+   post.ModalText (" G00")
+   post.ModalNumber (" X", endX * scale, "0.0000")
+   post.ModalNumber (" Y", endY * scale, "0.0000")
+   post.ModalNumber (" Z", endZ * scale, "0.0000")
+   post.Eol()
+end
+
+function OnMove()
+   post.ModalText (" G01")
+   post.ModalNumber (" X", endX * scale, "0.0000")
+   post.ModalNumber (" Y", endY * scale, "0.0000")
+   post.ModalNumber (" Z", endZ * scale, "0.0000")
+   post.ModalNumber (" F", feedRate * scale, "0.0###")
+   post.Eol()
+end
+
+function OnArc()
+   if(arcAngle <0) then
+      post.ModalText (" G03")
+   else
+      post.ModalText (" G02")
+   end
+   post.NonModalNumber (" X", endX * scale, "0.0000")
+   post.NonModalNumber (" Y", endY * scale, "0.0000")
+   post.ModalNumber (" Z", endZ * scale, "0.0000")
+   post.Text (" I")
+   post.Number ((arcCentreX - currentX) * scale, "0.0000")
+   post.Text (" J")
+   post.Number ((arcCentreY - currentY) * scale, "0.0000")
+   post.ModalNumber (" F", feedRate * scale, "0.0###")
+   post.Eol()
+end
+
+
+function OnPenDown()
+   if (preheat > 0.001) then
+      post.ModalText (" G00")
+      post.ModalNumber (" Z", cutHeight * scale, "0.0000")
+      post.Text ("\n G04 P")
+      post.Number (preheat,"0.###")
+      post.Eol()
+   end
+   post.ModalText (" G00")
+   post.ModalNumber (" Z", pierceHeight * scale, "0.0000")
+   post.Text ("\n M03 S1000\n")
+   if (pierceDelay + firstPierce > 0.001) then
+      post.Text (" G04 P")
+      post.Number (pierceDelay + firstPierce,"0.###")
+      firstPierce = 0
+      post.Eol()
+   end
+end
+
+-- uncomment (--) to activate 
+function Reference()
+   firstRef = false
+   post.ModalText("G38.2 Z")
+   post.Number(-50 * scale, "0.0##")
+   post.ModalNumber ("F", refFeed * scale, "0.0###")
+   post.Eol()
+   post.Modaltext ("G10 L20 Z-10.200")
+  -- post.ModalText("G92 Z0.0\n")
+  -- post.ModalText ("G00")
+  -- post.Text("Z")
+  -- post.Number (switchOffset * scale, format)
+   post.Eol()
+  -- post.ModalText("G92 Z0.0\n")
+end
+function OnPenUp()
+   post.Text (" M05\n")
+   if (endDelay > 0) then
+      post.Text (" G04 P")
+      post.Number (endDelay,"0.###")
+      post.Eol()
+   end
+end
+
+
+function OnDrill()
+   OnRapid()
+   OnPenDown()
+   endZ = drillZ
+   OnMove()
+   OnPenUp()
+   endZ = safeZ
+   OnRapid()
+end
